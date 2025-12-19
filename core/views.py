@@ -1,5 +1,4 @@
 # core/views.py
-
 from rest_framework import viewsets, permissions
 from .models import User, RoomListing, Match, UserPreferences
 from .serializers import UserSerializer, RoomListingSerializer, MatchSerializer, UserPreferencesSerializer
@@ -8,6 +7,8 @@ from .serializers import ConversationSerializer, MessageSerializer, PaymentSeria
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.decorators import action
+
 
 
 # 1. User ViewSet (Handles Registration & Profile)
@@ -16,6 +17,11 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     # This line overrides the global "IsAuthenticated" setting just for this view
     permission_classes = [permissions.AllowAny]
+    # Add this action!
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
 
 # 2. Listing ViewSet (Handles adding/viewing rooms)
 class RoomListingViewSet(viewsets.ModelViewSet):
@@ -66,4 +72,4 @@ class RegisterView(APIView):
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)    
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)            

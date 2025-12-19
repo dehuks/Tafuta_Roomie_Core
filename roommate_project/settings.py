@@ -32,6 +32,14 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "0.0.0.0",
+    ".ngrok-free.app",
+    ".ngrok-free.dev",
+]
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.ngrok-free.app', # Wildcard for any ngrok address
+    'https://*.ngrok-free.dev', # <--- Add this line
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
 ]
 
 
@@ -137,6 +145,7 @@ from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1), # Keep user logged in for 1 day
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'USER_ID_FIELD': 'user_id',
 }
 
 # Internationalization
