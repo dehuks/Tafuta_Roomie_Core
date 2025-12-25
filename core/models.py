@@ -87,6 +87,7 @@ class UserPreferences(models.Model):
     budget_max = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     preferred_gender = models.CharField(max_length=20, choices=Gender.choices, null=True)
     city = models.CharField(max_length=50, null=True)
+    other_interests = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'user_preferences'
@@ -131,22 +132,27 @@ class Match(models.Model):
 
 class Conversation(models.Model):
     conversation_id = models.AutoField(primary_key=True)
-    created_at = models.DateTimeField(default=timezone.now)
-    # You might want to add participants here, typical for ManyToMany relationships
-    
+    # 👇 Crucial: Who is in this chat?
+    participants = models.ManyToManyField(User, related_name='conversations')
+    created_at = models.DateTimeField(auto_now_add=True)
+    # 👇 Helps sort inbox by latest activity
+    updated_at = models.DateTimeField(auto_now=True) 
+
     class Meta:
         db_table = 'conversations'
+        ordering = ['-updated_at'] 
 
 class Message(models.Model):
     message_id = models.AutoField(primary_key=True)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
-    sender = models.ForeignKey(User, on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
     message_text = models.TextField()
-    sent_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'messages'
+        ordering = ['sent_at'] # Oldest messages at top (like WhatsApp)
 
 class Payment(models.Model):
     payment_id = models.AutoField(primary_key=True)

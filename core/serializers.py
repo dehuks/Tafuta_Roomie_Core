@@ -5,6 +5,7 @@ from .models import User, UserPreferences, RoomListing, Match, Conversation, Mes
 class UserSerializer(serializers.ModelSerializer):
     # Write_only ensures the password is never sent back in the API response (Security)
     password = serializers.CharField(write_only=True)
+    
 
     class Meta:
         model = User
@@ -20,7 +21,18 @@ class UserPreferencesSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserPreferences
         fields = '__all__'
-
+        # Don't make user read-only so it can be included in validated_data
+    
+    def create(self, validated_data):
+        # Ensure user is set from context if not provided
+        if 'user' not in validated_data:
+            validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        # Don't allow changing the user
+        validated_data.pop('user', None)
+        return super().update(instance, validated_data)
 # --- 3. Room Listing Serializer ---
 class RoomListingSerializer(serializers.ModelSerializer):
     # Read_only field to show the owner's name instantly on the app card
@@ -44,24 +56,46 @@ class MatchSerializer(serializers.ModelSerializer):
 
 # --- 5. Messaging Serializers ---
 class MessageSerializer(serializers.ModelSerializer):
+    # Nest sender info so we can show their name/avatar in chat
     sender_name = serializers.CharField(source='sender.full_name', read_only=True)
-    
+    is_me = serializers.SerializerMethodField()
+
     class Meta:
         model = Message
-        fields = ['message_id', 'conversation', 'sender', 'sender_name', 'message_text', 'sent_at', 'is_read']
+        fields = ['message_id', 'sender', 'sender_name', 'message_text', 'sent_at', 'is_read', 'is_me']
+
+    def get_is_me(self, obj):
+        # Returns True if the logged-in user sent this message
+        request = self.context.get('request')
+        if request and request.user:
+            return obj.sender == request.user
+        return False
 
 class ConversationSerializer(serializers.ModelSerializer):
-    # We will nest the last message to show a preview in the inbox
+    other_participant = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['conversation_id', 'created_at', 'last_message']
+        fields = ['conversation_id', 'other_participant', 'last_message', 'updated_at']
+
+    def get_other_participant(self, obj):
+        # Find the participant that is NOT the current user
+        request = self.context.get('request')
+        if request and request.user:
+            other = obj.participants.exclude(pk=request.user.pk).first()
+            if other:
+                return UserSerializer(other).data
+        return None
 
     def get_last_message(self, obj):
-        last_msg = obj.message_set.order_by('-sent_at').first()
+        last_msg = obj.messages.last() # Thanks to ordering in Meta
         if last_msg:
-            return MessageSerializer(last_msg).data
+            return {
+                'text': last_msg.message_text,
+                'sent_at': last_msg.sent_at,
+                'is_read': last_msg.is_read
+            }
         return None
 
 # --- 6. Payment Serializer ---
