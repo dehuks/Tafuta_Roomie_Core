@@ -62,8 +62,8 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ['message_id', 'sender', 'sender_name', 'message_text', 'sent_at', 'is_read', 'is_me']
-
+        fields = ['message_id', 'conversation', 'sender', 'sender_name', 'message_text', 'sent_at', 'is_read', 'is_me']
+        read_only_fields = ['message_id', 'sender', 'sender_name', 'sent_at', 'is_read', 'is_me']
     def get_is_me(self, obj):
         # Returns True if the logged-in user sent this message
         request = self.context.get('request')
