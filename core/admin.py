@@ -1,52 +1,85 @@
 from django.contrib import admin
-from django.db.models import Count
-from .models import User, RoomListing, Match, Payment, Review, Conversation, UserPreferences
+from django.utils.html import format_html
+from django.utils import timezone
+from .models import (
+    User, RoomListing, ListingImage, Match, 
+    Conversation, Message, UserPreferences, UserVerification
+)
 
-# 1. User Analytics Admin
-@admin.register(User)
+# --- CUSTOM ACTIONS ---
+@admin.action(description='✅ Approve selected verifications')
+def approve_verifications(modeladmin, request, queryset):
+    for verification in queryset:
+        # 1. Update the Verification Request
+        verification.verification_status = 'approved'
+        verification.verified_at = timezone.now()
+        verification.save()
+        
+        # 2. Update the actual User Profile
+        user = verification.user
+        user.is_verified = True
+        user.save()
+    
+    modeladmin.message_user(request, f"Successfully approved {queryset.count()} users.")
+
+@admin.action(description='❌ Reject selected verifications')
+def reject_verifications(modeladmin, request, queryset):
+    for verification in queryset:
+        verification.verification_status = 'rejected'
+        verification.save()
+    modeladmin.message_user(request, f"Rejected {queryset.count()} verification requests.")
+
+# --- ADMIN CLASSES ---
+
+class UserVerificationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'document_type', 'status_badge', 'submitted_at', 'thumbnail')
+    list_filter = ('verification_status', 'document_type', 'submitted_at')
+    actions = [approve_verifications, reject_verifications]
+    readonly_fields = ('submitted_at', 'verified_at', 'image_preview')
+
+    # Show small image in list
+    def thumbnail(self, obj):
+        if obj.document_image:
+            return format_html('<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;" />', obj.document_image.url)
+        return "No Image"
+
+    # Show large image in detail view
+    def image_preview(self, obj):
+        if obj.document_image:
+            return format_html('<img src="{}" style="max-width: 400px; max-height: 400px;" />', obj.document_image.url)
+        return "No Image"
+
+    # Color-coded status
+    def status_badge(self, obj):
+        colors = {
+            'pending': 'orange',
+            'approved': 'green',
+            'rejected': 'red',
+        }
+        color = colors.get(obj.verification_status, 'black')
+        return format_html('<span style="color: {}; font-weight: bold;">{}</span>', color, obj.verification_status.upper())
+    
+    status_badge.short_description = 'Status'
+
 class UserAdmin(admin.ModelAdmin):
-    list_display = ('email', 'full_name', 'role', 'is_verified', 'date_joined_pretty')
-    list_filter = ('role', 'is_verified', 'status', 'gender') # Sidebar filters
+    list_display = ('email', 'full_name', 'phone_number', 'role', 'is_verified_badge')
+    list_filter = ('role', 'is_verified', 'is_active', 'gender')
     search_fields = ('email', 'full_name', 'phone_number')
-    ordering = ('-created_at',)
     
-    # Analytics: Show how many listings each user has
-    def get_queryset(self, request):
-        queryset = super().get_queryset(request)
-        return queryset.annotate(listing_count=Count('listings'))
+    def is_verified_badge(self, obj):
+        return "✅" if obj.is_verified else "❌"
+    is_verified_badge.short_description = 'Verified'
 
-    def date_joined_pretty(self, obj):
-        return obj.created_at.strftime("%d %b %Y")
-    date_joined_pretty.short_description = 'Joined'
-
-# 2. Listing Admin with Image Preview
-@admin.register(RoomListing)
 class RoomListingAdmin(admin.ModelAdmin):
-    list_display = ('title', 'owner_link', 'rent_amount', 'city', 'room_type', 'is_active')
+    list_display = ('title', 'owner', 'rent_amount', 'city', 'is_active')
     list_filter = ('city', 'room_type', 'is_active')
-    search_fields = ('title', 'description', 'city')
-    list_editable = ('is_active',) # Toggle activation directly from list
-    
-    def owner_link(self, obj):
-        return obj.owner.full_name
-    owner_link.short_description = 'Landlord'
 
-# 3. Matches Admin
-@admin.register(Match)
-class MatchAdmin(admin.ModelAdmin):
-    list_display = ('user', 'matched_user', 'compatibility_score', 'match_status')
-    list_filter = ('match_status',)
-    search_fields = ('user__email', 'matched_user__email')
-
-# 4. Payment Admin (Crucial for Verification)
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('mpesa_reference', 'user', 'amount', 'payment_status', 'paid_at')
-    list_filter = ('payment_status', 'payment_type')
-    search_fields = ('mpesa_reference', 'user__email')
-    readonly_fields = ('mpesa_reference', 'amount', 'payment_type') # Prevent tampering
-
-# Register others simply
-admin.site.register(Review)
+# --- REGISTER MODELS ---
+admin.site.register(User, UserAdmin)
+admin.site.register(UserVerification, UserVerificationAdmin)
+admin.site.register(RoomListing, RoomListingAdmin)
+admin.site.register(ListingImage)
+admin.site.register(Match)
 admin.site.register(Conversation)
+admin.site.register(Message)
 admin.site.register(UserPreferences)

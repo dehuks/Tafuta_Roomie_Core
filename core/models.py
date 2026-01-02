@@ -5,8 +5,7 @@ from django.utils import timezone
 # --- 1. MANAGERS ---
 class UserManager(BaseUserManager):
     def create_user(self, email, phone_number, full_name, password=None, **extra_fields):
-        if not email:
-            raise ValueError('Users must have an email address')
+        if not email: raise ValueError('Users must have an email address')
         email = self.normalize_email(email)
         user = self.model(email=email, phone_number=phone_number, full_name=full_name, **extra_fields)
         user.set_password(password)
@@ -35,10 +34,12 @@ class Gender(models.TextChoices):
     PREFER_NOT_TO_SAY = 'prefer_not_to_say', 'Prefer Not to Say'
 
 class RoomType(models.TextChoices):
+    # 👇 Added these new choices
+    APARTMENT = 'apartment', 'Apartment'
+    HOSTEL = 'hostel', 'Hostel'
     PRIVATE = 'private', 'Private'
     SHARED = 'shared', 'Shared'
     BEDSITTER = 'bedsitter', 'Bedsitter'
-
 # --- 3. MODELS ---
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -50,7 +51,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_of_birth = models.DateField(null=True, blank=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.SEEKER)
     is_verified = models.BooleanField(default=False)
-    status = models.CharField(max_length=20, default='active')
     created_at = models.DateTimeField(default=timezone.now)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -63,24 +63,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = 'users'
 
-class UserVerification(models.Model):
-    verification_id = models.AutoField(primary_key=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verifications')
-    verification_type = models.CharField(max_length=50) # You can add choices here if needed
-    document_reference = models.CharField(max_length=255, null=True, blank=True)
-    verification_status = models.CharField(max_length=20, default='pending')
-    verified_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = 'user_verification'
-
 class UserPreferences(models.Model):
     preference_id = models.AutoField(primary_key=True)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
     cleanliness_level = models.CharField(max_length=10, null=True)
     smoking = models.BooleanField(default=False)
     pets = models.BooleanField(default=False)
-    noise_tolerance = models.CharField(max_length=10, null=True)
     guests_allowed = models.BooleanField(default=False)
     sleep_schedule = models.CharField(max_length=10, null=True)
     budget_min = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -91,6 +79,23 @@ class UserPreferences(models.Model):
 
     class Meta:
         db_table = 'user_preferences'
+
+
+class UserVerification(models.Model):
+    verification_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verifications')
+    
+    # We use ImageField now!
+    document_image = models.ImageField(upload_to='verification_docs/')
+    
+    document_type = models.CharField(max_length=50, default='national_id') # e.g., 'national_id', 'student_id'
+    verification_status = models.CharField(max_length=20, default='pending') # pending, approved, rejected
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'user_verifications'        
 
 class RoomListing(models.Model):
     listing_id = models.AutoField(primary_key=True)
@@ -112,7 +117,8 @@ class RoomListing(models.Model):
 class ListingImage(models.Model):
     image_id = models.AutoField(primary_key=True)
     listing = models.ForeignKey(RoomListing, on_delete=models.CASCADE, related_name='images')
-    image_url = models.CharField(max_length=255)
+    # 👇 CHANGE: Use ImageField for real file uploads
+    image_file = models.ImageField(upload_to='room_photos/') 
     uploaded_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -132,10 +138,8 @@ class Match(models.Model):
 
 class Conversation(models.Model):
     conversation_id = models.AutoField(primary_key=True)
-    # 👇 Crucial: Who is in this chat?
     participants = models.ManyToManyField(User, related_name='conversations')
     created_at = models.DateTimeField(auto_now_add=True)
-    # 👇 Helps sort inbox by latest activity
     updated_at = models.DateTimeField(auto_now=True) 
 
     class Meta:
@@ -152,14 +156,14 @@ class Message(models.Model):
 
     class Meta:
         db_table = 'messages'
-        ordering = ['sent_at'] # Oldest messages at top (like WhatsApp)
+        ordering = ['sent_at']
 
 class Payment(models.Model):
     payment_id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     listing = models.ForeignKey(RoomListing, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_type = models.CharField(max_length=20) # 'deposit' or 'rent'
+    payment_type = models.CharField(max_length=20)
     mpesa_reference = models.CharField(max_length=100, unique=True, null=True)
     payment_status = models.CharField(max_length=20, default='pending')
     paid_at = models.DateTimeField(null=True)
