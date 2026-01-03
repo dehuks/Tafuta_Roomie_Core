@@ -5,11 +5,11 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from django.db.models import Q, Max
-from .models import User, RoomListing, Match, UserPreferences, Conversation, Message, Payment, Review
+from .models import User, RoomListing, Match, UserPreferences, Conversation, Message, Payment, Review, UserVerification
 from .serializers import (
     UserSerializer, RoomListingSerializer, MatchSerializer, 
     UserPreferencesSerializer, ConversationSerializer, 
-    MessageSerializer, PaymentSerializer, ReviewSerializer
+    MessageSerializer, PaymentSerializer, ReviewSerializer, UserVerificationSerializer
 )
 
 # --- HELPER: SCORING ALGORITHM ---
@@ -87,7 +87,10 @@ class UserViewSet(viewsets.ModelViewSet):
 class RoomListingViewSet(viewsets.ModelViewSet):
     queryset = RoomListing.objects.filter(is_active=True).order_by('-created_at')
     serializer_class = RoomListingSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 # 3. Preferences ViewSet
 class UserPreferencesViewSet(viewsets.ModelViewSet):
@@ -288,3 +291,34 @@ class RegisterView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# 9. Verification (Fixed)
+class UserVerificationViewSet(viewsets.ModelViewSet):
+    queryset = UserVerification.objects.all()
+    serializer_class = UserVerificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return UserVerification.objects.all()
+        return UserVerification.objects.filter(user=self.request.user)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def approve(self, request, pk=None):
+        verification = self.get_object()
+        verification.verification_status = 'approved'
+        verification.verified_at = timezone.now() # Now this works!
+        verification.save()
+        user = verification.user
+        user.is_verified = True
+        user.save()
+        return Response({'status': 'approved'})
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def reject(self, request, pk=None):
+        verification = self.get_object()
+        reason = request.data.get('reason', 'Document invalid')
+        verification.verification_status = 'rejected'
+        verification.rejection_reason = reason
+        verification.save()
+        return Response({'status': 'rejected'})
