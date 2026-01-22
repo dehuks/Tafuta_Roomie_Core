@@ -1,16 +1,25 @@
-# core/views.py
 from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from django.db.models import Q, Max
-from .models import User, RoomListing, Match, UserPreferences, Conversation, Message, Payment, Review, UserVerification
+from .models import (User,
+ RoomListing,
+  Match, 
+  UserPreferences, 
+  Conversation, 
+  Message, 
+  Payment, 
+  Review, 
+  UserVerification
+  ) 
 from .serializers import (
     UserSerializer, RoomListingSerializer, MatchSerializer, 
     UserPreferencesSerializer, ConversationSerializer, 
     MessageSerializer, PaymentSerializer, ReviewSerializer, UserVerificationSerializer
 )
+from .notifications import send_push_notification 
 
 # --- HELPER: SCORING ALGORITHM ---
 def calculate_compatibility(user_prefs, candidate_prefs):
@@ -136,38 +145,90 @@ class UserPreferencesViewSet(viewsets.ModelViewSet):
         else:
             serializer.save(user=self.request.user)
 
-# 4. Matching ViewSet
+#4. Match ViewSet
 class MatchViewSet(viewsets.ModelViewSet):
     serializer_class = MatchSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    # 1. Required for Router
     queryset = Match.objects.all()
 
-    def list(self, request, *args, **kwargs):
-        current_user = request.user
+    # 2. Filter: Only show MY matches (Requests sent to me OR by me)
+    def get_queryset(self):
+        return Match.objects.filter(
+            Q(user=self.request.user) | Q(matched_user=self.request.user)
+        )
+
+    # 3. Create Logic: This handles the "Connect" button
+    def perform_create(self, serializer):
+        target_user_id = self.request.data.get('matched_user')
         
+        if not target_user_id:
+            raise serializers.ValidationError({"matched_user": "This field is required."})
+
+        # Check for duplicates
+        if Match.objects.filter(
+            Q(user=self.request.user, matched_user_id=target_user_id) |
+            Q(user_id=target_user_id, matched_user=self.request.user)
+        ).exists():
+            raise serializers.ValidationError({"detail": "Request already sent."})
+
+        # Save with manually calculated fields
+        serializer.save(
+            user=self.request.user,
+            matched_user_id=target_user_id,
+            match_status='pending',
+            compatibility_score=85 
+        )
+
+    def perform_update(self, serializer):
+        # Because 'match_status' is read-only in the serializer, 
+        # we must manually pull it from the request and save it.
+        status_update = self.request.data.get('match_status')
+        
+        if status_update:
+            # Force the update
+            serializer.instance.match_status = status_update
+            serializer.instance.save()
+        else:
+            super().perform_update(serializer)
+                
+
+    # 4. Recommendation Logic (The Algorithm)
+    @action(detail=False, methods=['get'])
+    def recommendations(self, request):
+        current_user = request.user
         try:
             my_prefs = current_user.preferences
         except UserPreferences.DoesNotExist:
             return Response({"detail": "Complete profile first."}, status=400)
 
         candidate_prefs = UserPreferences.objects.select_related('user').exclude(user=current_user)
-
         ranked_matches = []
         
         for candidate_pref in candidate_prefs:
             candidate_user = candidate_pref.user
             if candidate_user.is_superuser or candidate_user.is_staff: 
                 continue
+            
+            # 🛑 STRICT GENDER FILTERING (Male-Male / Female-Female)
+            if candidate_user.gender != current_user.gender:
+                continue
 
+            # Skip people I'm already matched with
+            if Match.objects.filter(
+                (Q(user=current_user) & Q(matched_user=candidate_user)) |
+                (Q(user=candidate_user) & Q(matched_user=current_user))
+            ).exists():
+                continue
+
+            # Calculate Score (Simplified for brevity)
             base_score = calculate_compatibility(my_prefs, candidate_pref)
             
+            # City penalty
             if my_prefs.city and candidate_pref.city:
                 if my_prefs.city.lower() != candidate_pref.city.lower():
                     base_score -= 50
-            
-            if my_prefs.preferred_gender and my_prefs.preferred_gender != 'prefer_not_to_say':
-                if candidate_user.gender != my_prefs.preferred_gender:
-                    base_score -= 30
 
             final_score = max(0, min(100, base_score))
 
@@ -175,12 +236,11 @@ class MatchViewSet(viewsets.ModelViewSet):
                 ranked_matches.append({
                     "match_id": f"temp_{candidate_user.user_id}",
                     "compatibility_score": final_score,
-                    "match_status": "pending",
+                    "match_status": "recommended",
                     "user": UserSerializer(candidate_user).data 
                 })
 
         ranked_matches.sort(key=lambda x: x['compatibility_score'], reverse=True)
-
         return Response(ranked_matches)
 
 # 5. Conversation ViewSet (FIXED)
@@ -257,17 +317,20 @@ class MessageViewSet(viewsets.ModelViewSet):
         return context
 
     def perform_create(self, serializer):
-        conversation = serializer.validated_data['conversation']
+        message = serializer.save(sender=self.request.user)
         
-        # Security check: User must be participant
-        if self.request.user not in conversation.participants.all():
-            raise ValidationError("You are not part of this conversation")
+        # 1. Identify the recipient (it's a chat, so it's the OTHER person)
+        conversation = message.conversation
+        recipient = conversation.participants.exclude(user_id=self.request.user.user_id).first()
         
-        # Save message with sender
-        serializer.save(sender=self.request.user)
-        
-        # Update conversation timestamp
-        conversation.save()
+        if recipient and recipient.expo_push_token:
+            # 2. Send Notification
+            send_push_notification(
+                token=recipient.expo_push_token,
+                title=f"New message from {self.request.user.full_name}",
+                body=message.message_text,
+                data={"conversation_id": conversation.conversation_id}
+            )
 
 # 7. Payment ViewSet
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -307,7 +370,7 @@ class UserVerificationViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         verification = self.get_object()
         verification.verification_status = 'approved'
-        verification.verified_at = timezone.now() # Now this works!
+        verification.verified_at = timezone.now() 
         verification.save()
         user = verification.user
         user.is_verified = True

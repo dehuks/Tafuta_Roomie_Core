@@ -6,3 +6,4 @@ djangorestframework-simplejwt
 drf-spectacular
 django-jazzmin
 Pillow
+requests
