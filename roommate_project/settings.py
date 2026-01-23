@@ -34,6 +34,7 @@ ALLOWED_HOSTS = [
     "0.0.0.0",
     ".ngrok-free.app",
     ".ngrok-free.dev",
+    "*"
 ]
 CSRF_TRUSTED_ORIGINS = [
     'https://*.ngrok-free.app', # Wildcard for any ngrok address

@@ -12,7 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['user_id', 'full_name', 'email', 'phone_number', 'password', 'role', 'gender', 'is_verified', 'preferences']
+        fields = ['user_id', 'full_name', 'email', 'phone_number', 'password', 'role', 'gender', 'is_verified', 'expo_push_token', 'preferences']
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
@@ -24,13 +24,16 @@ class UserSerializer(serializers.ModelSerializer):
         except UserPreferences.DoesNotExist:
             return None
 
-# --- 2. Preferences Serializer ---
+# --- 2. Preferences Serializer (FIXED) ---
 class UserPreferencesSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserPreferences
         fields = '__all__'
+        # 👇 IMPORTANT: This tells Django "Don't ask frontend for user ID"
+        read_only_fields = ['user'] 
     
     def create(self, validated_data):
+        # We can safely get user from context if not passed by view
         if 'user' not in validated_data:
             validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
@@ -50,6 +53,7 @@ class RoomListingSerializer(serializers.ModelSerializer):
     images = ListingImageSerializer(many=True, read_only=True)
     owner_name = serializers.CharField(source='owner.full_name', read_only=True)
     
+    # Handle image uploads
     uploaded_images = serializers.ListField(
         child=serializers.ImageField(max_length=1000000, allow_empty_file=False, use_url=False),
         write_only=True,
@@ -73,14 +77,16 @@ class RoomListingSerializer(serializers.ModelSerializer):
             ListingImage.objects.create(listing=listing, image_file=image_data)
         return listing
 
-# --- 5. Match Serializer ---
+# --- 5. Match Serializer (FIXED) ---
 class MatchSerializer(serializers.ModelSerializer):
-    matched_user_name = serializers.CharField(source='matched_user.full_name', read_only=True)
+    # 👇 Nested Serializers so frontend gets full details (Avatar, Name) for both
     user = UserSerializer(read_only=True) 
+    matched_user = UserSerializer(read_only=True) 
     
     class Meta:
         model = Match
-        fields = ['match_id', 'user', 'matched_user', 'matched_user_name', 'compatibility_score', 'match_status']
+        fields = ['match_id', 'user', 'matched_user', 'compatibility_score', 'match_status']
+        read_only_fields = ['compatibility_score', 'match_status', 'user', 'matched_user']
 
 # --- 6. Messaging Serializers ---
 class MessageSerializer(serializers.ModelSerializer):
@@ -136,7 +142,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         model = Review
         fields = '__all__'
 
-# --- 8. Verification Serializer (FIXED) ---
+# --- 8. Verification Serializer ---
 class UserVerificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserVerification
@@ -144,7 +150,6 @@ class UserVerificationSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'verification_status', 'verified_at', 'rejection_reason', 'submitted_at']
 
     def create(self, validated_data):
-        # 👇 This line is now correctly indented
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
@@ -158,4 +163,4 @@ class MeSerializer(serializers.ModelSerializer):
             'phone_number',
             'role',
             'is_verified',
-        ]        
+        ]

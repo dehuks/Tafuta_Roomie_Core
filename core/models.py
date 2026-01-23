@@ -54,6 +54,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(default=timezone.now)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    expo_push_token = models.CharField(max_length=255, null=True, blank=True)
+    
 
     objects = UserManager()
 
@@ -76,6 +78,7 @@ class UserPreferences(models.Model):
     preferred_gender = models.CharField(max_length=20, choices=Gender.choices, null=True)
     city = models.CharField(max_length=50, null=True)
     other_interests = models.TextField(null=True, blank=True)
+    noise_tolerance = models.CharField(max_length=20, default='Medium')
 
     class Meta:
         db_table = 'user_preferences'
