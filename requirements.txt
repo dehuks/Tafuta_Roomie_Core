@@ -6,4 +6,5 @@ djangorestframework-simplejwt
 drf-spectacular
 django-jazzmin
 Pillow
-requests
+requests                                                
+django-filter>=24.2

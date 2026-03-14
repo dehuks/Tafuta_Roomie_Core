@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     # Third-party
     'rest_framework',
     'drf_spectacular',
+    'django_filters',
     
     # Local apps
     'core',
@@ -217,6 +218,6 @@ JAZZMIN_UI_TWEAKS = {
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# 👇 ADD THIS FOR IMAGES
+# FOR IMAGES
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

@@ -10,7 +10,8 @@ from .views import (
     PaymentViewSet, 
     ReviewViewSet, 
     RegisterView,
-    UserVerificationViewSet
+    UserVerificationViewSet,
+    RoommateDirectoryViewSet
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -24,6 +25,7 @@ router.register(r'messages', MessageViewSet)
 router.register(r'payments', PaymentViewSet)
 router.register(r'reviews', ReviewViewSet)
 router.register(r'verifications', UserVerificationViewSet)
+router.register(r'roommates', RoommateDirectoryViewSet, basename='roommates')
 
 urlpatterns = [
     path('', include(router.urls)),
