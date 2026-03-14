@@ -62,6 +62,32 @@ def calculate_compatibility(user_prefs, candidate_prefs):
 
     return score
 
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters
+
+class RoommateDirectoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Returns a list of users who are actively looking for a room.
+    """
+    serializer_class = UserSerializer # Or a specific RoommateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    # Enable powerful filtering
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['gender', 'preferences__smoking', 'preferences__is_actively_looking']
+    search_fields = ['full_name', 'preferences__target_city', 'preferences__other_interests']
+    ordering_fields = ['preferences__budget_max', 'date_joined']
+
+    def get_queryset(self):
+        # 1. Only show people who WANT a room (seekers)
+        # 2. Exclude the user themselves
+        # 3. Exclude admins
+        return User.objects.filter(
+            preferences__is_actively_looking=True
+        ).exclude(
+            id=self.request.user.user_id
+        ).exclude(is_staff=True).select_related('preferences')
+
 # 1. User ViewSet
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()

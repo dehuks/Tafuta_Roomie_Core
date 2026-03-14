@@ -79,6 +79,11 @@ class UserPreferences(models.Model):
     city = models.CharField(max_length=50, null=True)
     other_interests = models.TextField(null=True, blank=True)
     noise_tolerance = models.CharField(max_length=20, default='Medium')
+    
+    # New Fields for the Directory
+    is_actively_looking = models.BooleanField(default=True)
+    target_city = models.CharField(max_length=100, blank=True)
+    move_in_date = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = 'user_preferences'
